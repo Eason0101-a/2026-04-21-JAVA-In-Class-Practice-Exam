@@ -11,6 +11,7 @@ public class ImagePartialDerivatives {
             String dyPath = args.length > 2 ? args[2] : "output_dy.png";
             String edgePath = args.length > 3 ? args[3] : "output_edge.png";
             int strongEdgeThreshold = args.length > 4 ? Integer.parseInt(args[4]) : 60;
+            int derivativeBoostPercent = args.length > 5 ? Integer.parseInt(args[5]) : 170;
 
             BufferedImage input = ImageIO.read(new File(inputPath));
             if (input == null) {
@@ -69,12 +70,17 @@ public class ImagePartialDerivatives {
 
             // 將梯度值依全圖最大值正規化，讓結果更清楚。
             // 同時套用小門檻，避免非常弱的噪聲被放大。
-            int noiseFloor = 12;
+                int derivativeNoiseFloor = 8;
+                int edgeNoiseFloor = 12;
             for (int y = 0; y < height; y++) {
                 for (int x = 0; x < width; x++) {
-                    int dxPixel = normalizeToByte(dxAbs[y][x], maxDx, noiseFloor);
-                    int dyPixel = normalizeToByte(dyAbs[y][x], maxDy, noiseFloor);
-                    int edgePixel = normalizeToByte(edgeMag[y][x], maxEdge, noiseFloor);
+                    int dxPixel = boostDerivative(
+                        normalizeToByte(dxAbs[y][x], maxDx, derivativeNoiseFloor),
+                        derivativeBoostPercent);
+                    int dyPixel = boostDerivative(
+                        normalizeToByte(dyAbs[y][x], maxDy, derivativeNoiseFloor),
+                        derivativeBoostPercent);
+                    int edgePixel = normalizeToByte(edgeMag[y][x], maxEdge, edgeNoiseFloor);
                     int strongEdgePixel = edgePixel >= strongEdgeThreshold ? 255 : 0;
 
                     setGray(dxImage, x, y, dxPixel);
@@ -93,6 +99,7 @@ public class ImagePartialDerivatives {
             System.out.println("dy 輸出: " + dyPath);
             System.out.println("邊緣輸出: " + edgePath);
             System.out.println("強邊緣閾值: " + strongEdgeThreshold);
+            System.out.println("dx/dy 增強倍率(%): " + derivativeBoostPercent);
 
         } catch (Exception e) {
             System.err.println("執行失敗: " + e.getMessage());
@@ -144,5 +151,16 @@ public class ImagePartialDerivatives {
 
         double normalized = (value - floor) * 255.0 / (maxValue - floor);
         return clamp((int) Math.round(normalized));
+    }
+
+    private static int boostDerivative(int value, int boostPercent) {
+        if (value <= 0) {
+            return 0;
+        }
+
+        // 用 gamma<1 拉亮中低強度，再用倍率讓 x/y 方向更明顯。
+        double gammaCorrected = Math.pow(value / 255.0, 0.75) * 255.0;
+        double boosted = gammaCorrected * boostPercent / 100.0;
+        return clamp((int) Math.round(boosted));
     }
 }
